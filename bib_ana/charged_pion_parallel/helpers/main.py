@@ -86,6 +86,7 @@ def process_set(pattern, max_events):
 
         reader = IOIMPL.LCFactory.getInstance().createLCReader()
         print("fname: ", fname)
+        reader.setReadCollectionNames(['MCParticle', 'PandoraPFOs'])
         reader.open(fname)
 
         # try:
@@ -174,5 +175,11 @@ def process_set(pattern, max_events):
         # except Exception:
         #     # EOF reached
         #     pass
+
+        del evt
+        del mcs
+        del best_mc
+        del pfos
+        del best_reco_pi
 
     return hists

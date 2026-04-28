@@ -12,10 +12,10 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser.add_argument('-i', '--inputFileDir', type=str, default='/data/gpenn/v8_noFragRem/pion_1GeV_1TeV_noBIB/')
-    parser.add_argument('-o', '--outputFile', type=str, default='pi_bib_ana.root')
+    parser.add_argument('-o', '--outputFile', type=str, default='data/pi_bib_ana.root')
     args = parser.parse_args()
 
-    MAX_EVENTS = 5
+    MAX_EVENTS = 500
 
     # running over partial slices to minimize memory usage (still unadvised)
     indices = list(range(0,10))
