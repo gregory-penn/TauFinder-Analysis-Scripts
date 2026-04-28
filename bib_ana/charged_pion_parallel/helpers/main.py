@@ -169,8 +169,8 @@ def process_set(pattern, max_events):
         # fill histograms according to region
         if regs:
             for reg in regs:
-                hists[f"fMatchedPt_{reg}"].Fill(best_reco_pi_pt)
-                hists[f"fMatchedTheta_{reg}"].Fill(best_reco_pi_theta)
+                hists[f"fMatchedPt_{reg}"].Fill(mcPt)
+                hists[f"fMatchedTheta_{reg}"].Fill(mcTheta)
 
         # except Exception:
         #     # EOF reached
