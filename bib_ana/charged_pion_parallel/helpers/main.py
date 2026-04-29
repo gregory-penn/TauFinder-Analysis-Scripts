@@ -4,14 +4,61 @@ import glob
 import math
 import numpy as np
 import ROOT
-from ROOT import TH1F, TFile, TCanvas, gPad
+from ROOT import TH1F, TFile
+import pyLCIO
 from pyLCIO import IOIMPL
 from .geometry import eta, theta_region, delta_phi
+from .track_truth_match import build_rel_nav, system_to_relname
 
 
 # main processing function
 # TODO: Clean some of the below parameters 
 # they should be input args in some sense
+
+hit_collection_names = [
+    "VBTrackerHitsConed",
+    "VETrackerHitsConed",
+    "IBTrackerHitsConed",
+    "IETrackerHitsConed",
+    "OBTrackerHitsConed",
+    "OETrackerHitsConed",
+    "VBTrackerHitsRelationsConed",
+    "VETrackerHitsRelationsConed",
+    "IBTrackerHitsRelationsConed",
+    "IETrackerHitsRelationsConed",
+    "OBTrackerHitsRelationsConed",
+    "OETrackerHitsRelationsConed",
+    "VertexBarrelCollectionConed",
+    "VertexEndcapCollectionConed",
+    "InnerTrackerBarrelCollectionConed",
+    "InnerTrackerEndcapCollectionConed",
+    "OuterTrackerBarrelCollectionConed",
+    "OuterTrackerEndcapCollectionConed"
+]
+
+# hit_collection_names = [
+#     "VBTrackerHits",
+#     "VETrackerHits",
+#     "IBTrackerHits",
+#     "IETrackerHits",
+#     "OBTrackerHits",
+#     "OETrackerHits",
+#     "VBTrackerHitsRelations",
+#     "VETrackerHitsRelations",
+#     "IBTrackerHitsRelations",
+#     "IETrackerHitsRelations",
+#     "OBTrackerHitsRelations",
+#     "OETrackerHitsRelations",
+#     "VertexBarrelCollection",
+#     "VertexEndcapCollection",
+#     "InnerTrackerBarrelCollection",
+#     "InnerTrackerEndcapCollection",
+#     "OuterTrackerBarrelCollection",
+#     "OuterTrackerEndcapCollection"
+# ]
+
+# copying this in from the tracking script although I don't think it works
+hit_collection_mask = {key:True for key in hit_collection_names}
 
 allowed_pdgs = {
     'plus': {211},
@@ -86,31 +133,13 @@ def process_set(pattern, max_events):
 
         reader = IOIMPL.LCFactory.getInstance().createLCReader()
         print("fname: ", fname)
-        reader.setReadCollectionNames(['MCParticle', 'PandoraPFOs'])
+        collection_names = ['MCParticle', 'PandoraPFOs', 'SelectedTracks'] + hit_collection_names
+        reader.setReadCollectionNames(collection_names)
         reader.open(fname)
-
-        # try:
-        #     while True:
-
-        if event_count >= max_events:
-            break
 
         evt = reader.readNextEvent()
         event_count += 1
         print("Event count: ", event_count)
-
-        # removing loop over MCPs - the first one should always be the true one
-        # I suspect others having (hopefully slightly) higher pT implies a material interaction resulting in a transverse boost
-        # strange, but is very rare
-        # for mc in mcs:
-        #     if mc.getPDG() not in selected_pdgs: continue
-
-        #     mcMom = mc.getMomentum()
-        #     mcPt = math.hypot(mcMom[0], mcMom[1])
-
-        #     if mcPt > best_mc_pt:
-        #         best_mc_pt = mcPt
-        #         best_mc = mc
 
         mcs = evt.getCollection('MCParticle')
         # Best MC charged pion
@@ -124,7 +153,6 @@ def process_set(pattern, max_events):
         mcEta = eta(mcTheta)
         mcPhi = math.atan2(mcMom[1], mcMom[0])
         mcE = best_mc.getEnergy()
-
         # find what region the MCP is in
         regs = theta_region(mcTheta)
 
@@ -133,6 +161,63 @@ def process_set(pattern, max_events):
             for reg in regs:
                 hists[f"fMCPt_{reg}"].Fill(mcPt)
                 hists[f"fMCTheta_{reg}"].Fill(mcTheta)
+
+        tracks = evt.getCollection('SelectedTracks')
+
+        print("number of tracks: ", len(tracks))
+        # auto-continue if there are no tracks in the event
+        if len(tracks) == 0:
+            continue
+
+        print("number of tacks: ", len(tracks))
+        # build relation between hit collections and sub-detector
+        rel_nav = build_rel_nav(evt)
+
+        hit_collections = []
+        for hname in hit_collection_names:
+            if(not hit_collection_mask[hname]):
+                print("I should never hit this, right??")
+                continue
+            try:
+                hit_collections.append(evt.getCollection(hname))
+            except:
+                hit_collection_mask[hname] = False
+                print('\tDid not find hit collection: {}. Disabling...'.format(hname))
+                pass        
+
+        for track in tracks:
+            print("Looping over track")
+            print("Track has number of hits:", len(track.getTrackerHits()))
+            print("track omega: ", track.getOmega())
+            truth_matched_hits = 0            
+            for hit in track.getTrackerHits():
+                position = hit.getPosition()
+                print("hit pos:", position)
+                encoding = hit_collections[0].getParameters().getStringVal(pyLCIO.EVENT.LCIO.CellIDEncoding)
+                decoder = pyLCIO.UTIL.BitField64(encoding)
+                cellID = int(hit.getCellID0())
+                decoder.setValue(cellID)
+                detector = decoder["system"].value()
+                layer = decoder['layer'].value()
+                if detector == 1 or detector == 2:
+                    LC_pixel_nhit += 1
+                if detector == 3 or detector == 4:
+                    LC_inner_nhit += 1
+                if detector == 5 or detector == 6: 
+                    LC_outer_nhit += 1
+                print("detector:", detector)
+                print("len(getrel objects):", len(rel_nav[system_to_relname[detector]].getRelatedToObjects(hit)))
+                for sim_hit in rel_nav[system_to_relname[detector]].getRelatedToObjects(hit):
+                    print(type(sim_hit))
+                    print(sim_hit)
+                    mcp_true = sim_hit.getMCParticle()
+                    if mcp_true and abs(mcp_true.getPDG()) == 211:
+                        truth_matched_hits += 1
+                truth_hit_ratio = truth_matched_hits / len(track.getTrackerHits())
+                print("truth_hit_ratio: ", truth_hit_ratio)
+            
+
+        print(len(tracks))
 
         # initialize reco pis, to be found
         best_reco_charged = None
@@ -171,10 +256,6 @@ def process_set(pattern, max_events):
                 if abs(best_reco_charged.getType()) == abs(mcPDG):
                     hists[f"fMatchedPt_{reg}"].Fill(mcPt)
                     hists[f"fMatchedTheta_{reg}"].Fill(mcTheta)
-
-        # except Exception:
-        #     # EOF reached
-        #     pass
 
         del evt
         del mcs
