@@ -65,9 +65,9 @@ def process_set(pattern, max_events):
         # hists[f"fTrackPt_{region}"] = book(TH1F(f'matched_track_pt_{region}', f'Matched Track p_{{T}} ({region});p_{{T}}_true;Entries', PT_BINS, PT_MIN, PT_MAX))
         # hists[f"fTrackTheta_{region}"] = book(TH1F(f'matched_track_theta_{region}', f'Matched Track #theta ({region});#theta_true [rad];Entries', THETA_BINS, 0, np.pi))
 
-        # # Histograms for counting track-cluster matching efficiency
-        # hists[f"fTrkClsPt_{region}"] = book(TH1F(f'trk_cls_match_pt_{region}', f'Matched Track p_{{T}} ({region});p_{{T}}_true;Entries', PT_BINS, PT_MIN, PT_MAX))
-        # hists[f"fTrkClsTheta_{region}"] = book(TH1F(f'trk_cls_match_theta_{region}', f'Matched Track p_{{T}} #theta ({region});#theta_true [rad];Entries', THETA_BINS, 0, np.pi))
+        # Histograms for counting track-cluster matching efficiency
+        hists[f"fTrkClsPt_{region}"] = book(TH1F(f'trk_cls_match_pt_{region}', f'Matched Track p_{{T}} ({region});p_{{T}}_true;Entries', PT_BINS, PT_MIN, PT_MAX))
+        hists[f"fTrkClsTheta_{region}"] = book(TH1F(f'trk_cls_match_theta_{region}', f'Matched Track p_{{T}} #theta ({region});#theta_true [rad];Entries', THETA_BINS, 0, np.pi))
 
         # Histograms for counting reco charged pions
         hists[f"fMatchedPt_{region}"] = book(TH1F(f'mc_matched_pt_{region}', f'Matched Best Reco Charged Pion MC p_{{T}} ({region});p_{{T}}_true;Entries', PT_BINS, PT_MIN, PT_MAX))
@@ -135,42 +135,42 @@ def process_set(pattern, max_events):
                 hists[f"fMCTheta_{reg}"].Fill(mcTheta)
 
         # initialize reco pis, to be found
-        best_reco_pi = None
-        best_reco_pi_pt = -1.0
-        best_reco_pi_theta = -1.0
+        best_reco_charged = None
+        best_reco_charged_pt = -1.0
         
         pfos = evt.getCollection('PandoraPFOs')
 
         for pfo in pfos:
-            if ignore_charge and abs(pfo.getType()) != abs(mcPDG): continue # no charge matching case
-            elif pfo.getType() != mcPDG: continue
-
+            # allowing all charged particles, to filter by charged pions later
+            if abs(pfo.getType()) != abs(mcPDG) and abs(pfo.getType()) != 11 and abs(pfo.getType()) != 13: continue # no charge matching case
             # Pion kinematics
-            recoPiMomDefault = pfo.getMomentum()
-            recoPiPtDefault = math.hypot(recoPiMomDefault[0], recoPiMomDefault[1])
-            pfoE = pfo.getEnergy()
-            recoPiTheta = math.acos(recoPiMomDefault[2] / math.sqrt(recoPiPtDefault ** 2 + recoPiMomDefault[2] ** 2))
-            recoPiEta = eta(recoPiTheta)
-            recoPiPhi = math.atan2(recoPiMomDefault[1], recoPiMomDefault[0])
+            recoChargedMomDefault = pfo.getMomentum()
+            recoChargedPtDefault = math.hypot(recoChargedMomDefault[0], recoChargedMomDefault[1])
+            recoChargedTheta = math.acos(recoChargedMomDefault[2] / math.sqrt(recoChargedPtDefault ** 2 + recoChargedMomDefault[2] ** 2))
+            recoChargedEta = eta(recoChargedTheta)
+            recoChargedPhi = math.atan2(recoChargedMomDefault[1], recoChargedMomDefault[0])
 
             # dR matching
-            dphi = delta_phi(mcPhi, recoPiPhi)
-            dR = math.sqrt(dphi*dphi + (mcEta - recoPiEta)**2)
+            dphi = delta_phi(mcPhi, recoChargedPhi)
+            dR = math.sqrt(dphi*dphi + (mcEta - recoChargedEta)**2)
 
             if dR < 0.1:
-                if recoPiPtDefault > best_reco_pi_pt:
-                    best_reco_pi_pt = recoPiPtDefault
-                    best_reco_pi_theta = recoPiTheta
-                    best_reco_pi = pfo
+                if recoChargedPtDefault > best_reco_charged_pt:
+                    best_reco_charged_pt = recoChargedPtDefault
+                    best_reco_charged = pfo
 
-        if best_reco_pi is None: # check if no default match was found, if so, skip this event
+        if best_reco_charged is None: # check if no default match was found, if so, skip this event
             continue
 
         # fill histograms according to region
         if regs:
             for reg in regs:
-                hists[f"fMatchedPt_{reg}"].Fill(mcPt)
-                hists[f"fMatchedTheta_{reg}"].Fill(mcTheta)
+                hists[f"fTrkClsPt_{reg}"].Fill(mcPt)
+                hists[f"fTrkClsTheta_{reg}"].Fill(mcTheta)
+                # now add to the charged pion ID histogram
+                if abs(best_reco_charged.getType()) == abs(mcPDG):
+                    hists[f"fMatchedPt_{reg}"].Fill(mcPt)
+                    hists[f"fMatchedTheta_{reg}"].Fill(mcTheta)
 
         # except Exception:
         #     # EOF reached
@@ -180,6 +180,6 @@ def process_set(pattern, max_events):
         del mcs
         del best_mc
         del pfos
-        del best_reco_pi
+        del best_reco_charged
 
     return hists
