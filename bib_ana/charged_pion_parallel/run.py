@@ -11,8 +11,15 @@ from helpers.main import process_set
 if __name__ == "__main__":
 
     parser = ArgumentParser()
-    parser.add_argument('-i', '--inputFileDir', type=str, default='/data/gpenn/v8_noFragRem/pion_1GeV_1TeV/reco_output_sim_piguns_v8')
-    parser.add_argument('-o', '--outputFile', type=str, default='data/pi_bib_file1')
+    # BIB file 1
+    # parser.add_argument('-i', '--inputFileDir', type=str, default='/data/gpenn/v8_noFragRem/pion_1GeV_1TeV/reco_output_sim_piguns_v8')
+    # no BIB file 1
+    # parser.add_argument('-i', '--inputFileDir', type=str, default='/data/gpenn/v8_noFragRem/pion_1GeV_1TeV_noBIB/reco_noFragRem_noBIB_output_sim_piguns_v8')
+    # BIB file 2 
+    #parser.add_argument('-i', '--inputFileDir', type=str, default='/data/gpenn/v8_noFragRem/round2_pion_1GeV_1TeV/reco_output_sim_piguns_1G_1T')
+    # no BIB file 2
+    parser.add_argument('-i', '--inputFileDir', type=str, default='/data/gpenn/v8_noFragRem/round2_pion_1GeV_1TeV_noBIB/reco_noFragRem_noBIB_output_sim_piguns_1G_1T')
+    parser.add_argument('-o', '--outputFile', type=str, default='data/pi_no_bib_file2')
     args = parser.parse_args()
 
     MAX_EVENTS = 500
@@ -26,7 +33,7 @@ if __name__ == "__main__":
         for ind2 in index2:
             print("Processing slice: ", ind1, ind2)
             pattern = f"{args.inputFileDir}.{ind1}{ind2}*.slcio"
-            outFile = f"{args.outputFile}_{ind1}{ind2}.root"
+            outFile = f"{args.outputFile}.{ind1}{ind2}.root"
             # processing only a hundredth of the files at a time for memory management purposes
             subprocess.run(["python", "helpers/process_reco.py", str(MAX_EVENTS), str(pattern), str(outFile)])
 

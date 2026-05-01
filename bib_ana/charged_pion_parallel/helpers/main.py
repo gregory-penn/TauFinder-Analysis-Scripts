@@ -109,8 +109,8 @@ def process_set(pattern, max_events):
         hists[f"fMCTheta_{region}"] = book(TH1F(f'mc_pion_theta_{region}', f'MC Charged Pion #theta ({region});#theta_reco [rad];Entries', THETA_BINS, 0, np.pi))
 
         # # Histograms for counting tracking efficiency
-        # hists[f"fTrackPt_{region}"] = book(TH1F(f'matched_track_pt_{region}', f'Matched Track p_{{T}} ({region});p_{{T}}_true;Entries', PT_BINS, PT_MIN, PT_MAX))
-        # hists[f"fTrackTheta_{region}"] = book(TH1F(f'matched_track_theta_{region}', f'Matched Track #theta ({region});#theta_true [rad];Entries', THETA_BINS, 0, np.pi))
+        hists[f"fTrackPt_{region}"] = book(TH1F(f'matched_track_pt_{region}', f'Matched Track p_{{T}} ({region});p_{{T}}_true;Entries', PT_BINS, PT_MIN, PT_MAX))
+        hists[f"fTrackTheta_{region}"] = book(TH1F(f'matched_track_theta_{region}', f'Matched Track #theta ({region});#theta_true [rad];Entries', THETA_BINS, 0, np.pi))
 
         # Histograms for counting track-cluster matching efficiency
         hists[f"fTrkClsPt_{region}"] = book(TH1F(f'trk_cls_match_pt_{region}', f'Matched Track p_{{T}} ({region});p_{{T}}_true;Entries', PT_BINS, PT_MIN, PT_MAX))
@@ -133,13 +133,18 @@ def process_set(pattern, max_events):
 
         reader = IOIMPL.LCFactory.getInstance().createLCReader()
         print("fname: ", fname)
-        collection_names = ['MCParticle', 'PandoraPFOs', 'SelectedTracks'] + hit_collection_names
-        reader.setReadCollectionNames(collection_names)
+        collection_names = ['MCParticle', 'PandoraPFOs', 'SelectedTracks']#, 'MCParticle_SelectedTracks']# + hit_collection_names
+        #reader.setReadCollectionNames(collection_names)
         reader.open(fname)
 
         evt = reader.readNextEvent()
         event_count += 1
         print("Event count: ", event_count)
+
+        if "MCParticle" not in evt.getCollectionNames():
+            # there seems to be an issue with some non-BIB files. The total number is small, so skipping them should be fine.
+            print("Event seems bugged! Skipping.")
+            continue
 
         mcs = evt.getCollection('MCParticle')
         # Best MC charged pion
@@ -163,61 +168,75 @@ def process_set(pattern, max_events):
                 hists[f"fMCTheta_{reg}"].Fill(mcTheta)
 
         tracks = evt.getCollection('SelectedTracks')
-
-        print("number of tracks: ", len(tracks))
-        # auto-continue if there are no tracks in the event
-        if len(tracks) == 0:
+        relationsContainer = evt.getCollection('MCParticle_SelectedTracks')
+        relation = pyLCIO.UTIL.LCRelationNavigator(relationsContainer)
+        related_tracks = relation.getRelatedToObjects(best_mc)
+        print("number of relation tracks: ", len(related_tracks))
+        # auto-continue if there are no tracks or truth-matched tracks in the event
+        if len(tracks) == 0 or len(related_tracks) == 0:
             continue
 
-        print("number of tacks: ", len(tracks))
-        # build relation between hit collections and sub-detector
-        rel_nav = build_rel_nav(evt)
+        #### Below is for proper track truth matching. Currently commented out. See comments for why. ####
+        
+        # # build relation between hit collections and sub-detector
+        # rel_nav = build_rel_nav(evt)
 
-        hit_collections = []
-        for hname in hit_collection_names:
-            if(not hit_collection_mask[hname]):
-                print("I should never hit this, right??")
-                continue
-            try:
-                hit_collections.append(evt.getCollection(hname))
-            except:
-                hit_collection_mask[hname] = False
-                print('\tDid not find hit collection: {}. Disabling...'.format(hname))
-                pass        
+        # hit_collections = []
+        # for hname in hit_collection_names:
+        #     if(not hit_collection_mask[hname]):
+        #         print("I should never hit this, right??")
+        #         continue
+        #     try:
+        #         hit_collections.append(evt.getCollection(hname))
+        #     except:
+        #         hit_collection_mask[hname] = False
+        #         print('\tDid not find hit collection: {}. Disabling...'.format(hname))
+        #         pass        
 
-        for track in tracks:
-            print("Looping over track")
-            print("Track has number of hits:", len(track.getTrackerHits()))
-            print("track omega: ", track.getOmega())
-            truth_matched_hits = 0            
-            for hit in track.getTrackerHits():
-                position = hit.getPosition()
-                print("hit pos:", position)
-                encoding = hit_collections[0].getParameters().getStringVal(pyLCIO.EVENT.LCIO.CellIDEncoding)
-                decoder = pyLCIO.UTIL.BitField64(encoding)
-                cellID = int(hit.getCellID0())
-                decoder.setValue(cellID)
-                detector = decoder["system"].value()
-                layer = decoder['layer'].value()
-                if detector == 1 or detector == 2:
-                    LC_pixel_nhit += 1
-                if detector == 3 or detector == 4:
-                    LC_inner_nhit += 1
-                if detector == 5 or detector == 6: 
-                    LC_outer_nhit += 1
-                print("detector:", detector)
-                print("len(getrel objects):", len(rel_nav[system_to_relname[detector]].getRelatedToObjects(hit)))
-                for sim_hit in rel_nav[system_to_relname[detector]].getRelatedToObjects(hit):
-                    print(type(sim_hit))
-                    print(sim_hit)
-                    mcp_true = sim_hit.getMCParticle()
-                    if mcp_true and abs(mcp_true.getPDG()) == 211:
-                        truth_matched_hits += 1
-                truth_hit_ratio = truth_matched_hits / len(track.getTrackerHits())
-                print("truth_hit_ratio: ", truth_hit_ratio)
+        # apparently SelectedTracks don't have any hits associated
+        # this is a known bug
+        # the tracking results assume that these tracks have high hit purity
+        # therefore they will pass the truth-matching requirement
+        # therefore take any event with a SelectedTrack as passing tracking requirements
+        # for track in tracks:
+        #     print("Looping over track")
+        #     print("Track has number of hits:", len(track.getTrackerHits()))
+        #     print("track omega: ", track.getOmega())
+        #     truth_matched_hits = 0            
+        #     for hit in track.getTrackerHits():
+        #         position = hit.getPosition()
+        #         print("hit pos:", position)
+        #         encoding = hit_collections[0].getParameters().getStringVal(pyLCIO.EVENT.LCIO.CellIDEncoding)
+        #         decoder = pyLCIO.UTIL.BitField64(encoding)
+        #         cellID = int(hit.getCellID0())
+        #         decoder.setValue(cellID)
+        #         detector = decoder["system"].value()
+        #         layer = decoder['layer'].value()
+        #         if detector == 1 or detector == 2:
+        #             LC_pixel_nhit += 1
+        #         if detector == 3 or detector == 4:
+        #             LC_inner_nhit += 1
+        #         if detector == 5 or detector == 6: 
+        #             LC_outer_nhit += 1
+        #         print("detector:", detector)
+        #         print("len(getrel objects):", len(rel_nav[system_to_relname[detector]].getRelatedToObjects(hit)))
+        #         for sim_hit in rel_nav[system_to_relname[detector]].getRelatedToObjects(hit):
+        #             print(type(sim_hit))
+        #             print(sim_hit)
+        #             mcp_true = sim_hit.getMCParticle()
+        #             if mcp_true and abs(mcp_true.getPDG()) == 211:
+        #                 truth_matched_hits += 1
+        #         truth_hit_ratio = truth_matched_hits / len(track.getTrackerHits())
+        #         print("truth_hit_ratio: ", truth_hit_ratio)
             
+        #### end track truth matching section ####
 
-        print(len(tracks))
+        # this satisfies our tracking efficiency requirements
+        # fill tracking efficiency plots
+        if regs:
+            for reg in regs:
+                hists[f"fTrackPt_{reg}"].Fill(mcPt)
+                hists[f"fTrackTheta_{reg}"].Fill(mcTheta)
 
         # initialize reco pis, to be found
         best_reco_charged = None
@@ -260,6 +279,9 @@ def process_set(pattern, max_events):
         del evt
         del mcs
         del best_mc
+        del tracks
+        del relationsContainer
+        del related_tracks
         del pfos
         del best_reco_charged
 
